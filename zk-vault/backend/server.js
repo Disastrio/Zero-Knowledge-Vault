@@ -50,7 +50,10 @@ app.use('/api/keys', authRouter);
 app.use('/api/files', filesRouter);
 app.use('/api/search', searchRouter);
 
-// ─── Health Check ───
+// ─── Root & Health Check ───
+app.get('/', (req, res) => res.redirect('/api/health'));
+app.get('/api', (req, res) => res.redirect('/api/health'));
+
 app.get('/api/health', (req, res) => {
   const stats = storage.getStats();
   res.json({
