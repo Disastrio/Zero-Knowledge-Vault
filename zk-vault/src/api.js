@@ -278,6 +278,25 @@ export async function downloadFile(fileId, masterKeyHex) {
   return { buffer: decryptedBuffer, filename: originalName };
 }
 
+// ─── Download encrypted file WITHOUT decrypting ───
+export async function downloadFileRaw(fileId) {
+  console.log('[ZK-Vault] === RAW DOWNLOAD START (no decryption) ===');
+  console.log('[ZK-Vault] File ID:', fileId);
+
+  const res = await fetch(`${API_BASE}/files/${fileId}`);
+  const json = await res.json();
+  if (!json.success) throw new Error(json.error);
+
+  const { encryptedData, iv, authTag, encryptedName } = json.data;
+
+  // Package the encrypted payload as a JSON blob so it can be re-imported later
+  const payload = JSON.stringify({ encryptedData, iv, authTag, encryptedName });
+  const blob = new Blob([payload], { type: 'application/json' });
+
+  console.log('[ZK-Vault] === RAW DOWNLOAD COMPLETE === Returning encrypted payload');
+  return { blob, filename: `${fileId.substring(0, 12)}.enc.json` };
+}
+
 // ─── Delete a file ───
 export async function deleteFile(fileId) {
   const res = await fetch(`${API_BASE}/files/${fileId}`, { method: 'DELETE' });

@@ -6,6 +6,7 @@ import {
   searchFiles,
   listFiles,
   downloadFile,
+  downloadFileRaw,
   deleteFile,
   healthCheck,
 } from './api'
@@ -146,6 +147,7 @@ function App() {
   // UI state
   const [activeSection, setActiveSection] = useState('hero');
   const [logEntries, setLogEntries] = useState([]);
+  const [autoDecrypt, setAutoDecrypt] = useState(true);
   const fileInputRef = useRef(null);
   const fileNameMapRef = useRef(new Map()); // Persistent map: fileId → { name, type }
 
@@ -304,18 +306,31 @@ function App() {
     return mimeMap[ext] || 'application/octet-stream';
   };
 
-  // ─── Download & decrypt ───
+  // ─── Download (decrypted original or encrypted) ───
   const handleDownload = async (fileId) => {
     try {
-      addLog(`Downloading encrypted file ${fileId.substring(0, 8)}...`);
+      addLog(`Downloading file ${fileId.substring(0, 8)}...`);
       addLog('Server sends encrypted ciphertext only — zero knowledge maintained');
-      const { buffer, filename } = await downloadFile(fileId, masterKeyHex);
-      addLog(`Decrypting "${filename}" client-side with AES-256-GCM...`, 'info');
-      addLog(`✓ Decrypted "${filename}" successfully — saving plaintext locally`, 'success');
 
-      // Create download blob with correct MIME type so the file opens properly
-      const mimeType = getMimeType(filename);
-      const blob = new Blob([buffer], { type: mimeType });
+      let blob, filename;
+
+      if (autoDecrypt) {
+        // CORRECT: Decryption ON — decrypt client-side and give the original plaintext file
+        const { buffer, filename: decName } = await downloadFile(fileId, masterKeyHex);
+        filename = decName;
+        addLog(`Decrypting "${filename}" client-side with AES-256-GCM...`, 'info');
+        addLog(`✓ Decrypted "${filename}" successfully — saving original file locally`, 'success');
+        const mimeType = getMimeType(filename);
+        blob = new Blob([buffer], { type: mimeType });
+      } else {
+        // CORRECT: Decryption OFF — download the raw encrypted payload
+        const raw = await downloadFileRaw(fileId);
+        blob = raw.blob;
+        filename = raw.filename;
+        addLog(`Saving encrypted payload as "${filename}" — no decryption performed`, 'info');
+        addLog('✓ Encrypted file saved — server never learned file content', 'success');
+      }
+
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
@@ -626,7 +641,31 @@ function App() {
                 </span>
               )}
             </div>
-            <div style={{ display: 'flex', gap: '8px' }}>
+            <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+              {/* Decrypt toggle */}
+              <div className="decrypt-toggle" id="decrypt-toggle">
+                <span className="decrypt-toggle-label">
+                  {autoDecrypt ? <>🔓 Decryption ON</> : <>🔒 Encrypted</>}
+                </span>
+                <button
+                  className={`toggle-switch ${autoDecrypt ? 'active' : ''}`}
+                  onClick={() => {
+                    setAutoDecrypt(prev => !prev);
+                    addLog(
+                      autoDecrypt
+                        ? 'Decryption OFF — downloads will save encrypted payload'
+                        : 'Decryption ON — downloads will give you the original file',
+                      'info'
+                    );
+                  }}
+                  disabled={!vaultInitialized}
+                  title={autoDecrypt ? 'Downloads are decrypted — you get the original file' : 'Downloads are encrypted'}
+                  id="decrypt-toggle-btn"
+                >
+                  <span className="toggle-thumb" />
+                </button>
+              </div>
+
               <input
                 type="file"
                 ref={fileInputRef}
@@ -683,7 +722,7 @@ function App() {
                     <div className="vault-file-actions" style={{ display: 'flex', gap: '6px' }}>
                       <button
                         className="btn-icon"
-                        title="Download & Decrypt"
+                        title={autoDecrypt ? 'Download Original File' : 'Download Encrypted'}
                         onClick={() => handleDownload(file.id)}
                       >
                         <DownloadIcon />
